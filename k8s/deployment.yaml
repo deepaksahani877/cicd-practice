@@ -1,23 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: springboot-app
+  name: cicdpractice
+  labels:
+    app: cicdpractice
 spec:
-  replicas: 1
+  replicas: 2
 
   selector:
     matchLabels:
-      app: springboot
+      app: cicdpractice
 
   template:
     metadata:
       labels:
-        app: springboot
+        app: cicdpractice
 
     spec:
       containers:
-        - name: springboot
-          image: springboot-demo
+        - name: cicdpractice
+          image: cicdpractice:latest
           imagePullPolicy: Never
           ports:
             - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
