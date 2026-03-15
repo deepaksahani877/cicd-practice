@@ -60,14 +60,17 @@ pipeline {
                 script {
                     if (isUnix()) {
                         sh '''
-                            eval "$(minikube -p minikube docker-env)"
                             docker build -t ${APP_NAME}:${IMAGE_TAG} -t ${APP_NAME}:latest .
-                            docker images | grep ${APP_NAME}
+                            minikube image load ${APP_NAME}:${IMAGE_TAG}
+                            minikube image load ${APP_NAME}:latest
+                            docker images | grep ${APP_NAME} || true
                         '''
                     } else {
                         powershell '''
-                            minikube -p minikube docker-env --shell powershell | Invoke-Expression
+                            $ErrorActionPreference = "Stop"
                             docker build -t "$env:APP_NAME:$env:IMAGE_TAG" -t "$env:APP_NAME:latest" .
+                            minikube image load "$env:APP_NAME:$env:IMAGE_TAG"
+                            minikube image load "$env:APP_NAME:latest"
                             docker images | Select-String $env:APP_NAME
                         '''
                     }
@@ -80,6 +83,8 @@ pipeline {
                 script {
                     if (isUnix()) {
                         sh '''
+                            kubectl config use-context minikube
+                            kubectl cluster-info
                             kubectl apply -n ${K8S_NAMESPACE} -f k8s/deployment.yaml
                             kubectl apply -n ${K8S_NAMESPACE} -f k8s/service.yaml
                             kubectl set image deployment/${APP_NAME} ${APP_NAME}=${APP_NAME}:${IMAGE_TAG} -n ${K8S_NAMESPACE}
@@ -87,6 +92,9 @@ pipeline {
                         '''
                     } else {
                         powershell '''
+                            $ErrorActionPreference = "Stop"
+                            kubectl config use-context minikube
+                            kubectl cluster-info
                             kubectl apply -n $env:K8S_NAMESPACE -f k8s/deployment.yaml
                             kubectl apply -n $env:K8S_NAMESPACE -f k8s/service.yaml
                             kubectl set image deployment/$env:APP_NAME $env:APP_NAME=$env:APP_NAME:$env:IMAGE_TAG -n $env:K8S_NAMESPACE
