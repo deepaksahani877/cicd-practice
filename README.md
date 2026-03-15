@@ -1,167 +1,224 @@
 # CICDPractice
 
-Complete CI/CD setup for Spring Boot using Git, GitHub, Jenkins, Docker, and Kubernetes (Minikube).
+CI/CD setup for Spring Boot using Git, GitHub, Jenkins, Docker, and Kubernetes (Minikube).
 
 ## GitHub Repository
 
-- Repo URL: `https://github.com/deepaksahani877/cicd-practice.git`
+- `https://github.com/deepaksahani877/cicd-practice.git`
 
-## What this pipeline does
+## Architecture
 
-1. Pull source from GitHub
-2. Build and test with Maven (`mvn clean verify`)
-3. Build Docker image in Minikube Docker daemon
-4. Deploy to Kubernetes using manifests in `k8s/`
-5. Roll out the latest image tag (`cicdpractice:<build-number>`)
+1. Push code to GitHub `main`
+2. GitHub webhook triggers Jenkins
+3. Jenkins runs `Jenkinsfile`
+4. Maven build/test
+5. Docker image build
+6. Kubernetes deploy rollout on Minikube
 
-## 1. Clone project
+## Recommended Setup
 
-```bash
-git clone https://github.com/deepaksahani877/cicd-practice.git
-cd cicd-practice
-```
+Use Jenkins installed on Windows host (not Jenkins-in-Docker) for local Minikube workflow.
 
-## 2. Install prerequisites
+Reason:
+- Jenkins-in-Docker often fails with `mvn: not found`, `kubectl: not found`, `minikube: not found` unless custom image/tooling is added.
 
-Install these on the same machine where Jenkins agent runs:
+## 1. Install Prerequisites
+
+Install on the same machine where Jenkins runs:
 
 - Git
-- JDK 21
+- Java JDK 21
 - Maven 3.9+
-- Docker
+- Docker Desktop
 - Minikube
 - kubectl
-- Jenkins
+- Jenkins (Windows MSI)
+- ngrok
 
 Verify:
 
-```bash
+```powershell
 git --version
 java -version
 mvn -version
 docker --version
 minikube version
 kubectl version --client
+ngrok version
 ```
 
-## 3. Start Docker and Minikube
+## 2. Clone Project
 
-```bash
+```powershell
+git clone https://github.com/deepaksahani877/cicd-practice.git
+cd cicd-practice
+```
+
+## 3. Start Minikube
+
+```powershell
 minikube start
 kubectl get nodes
 ```
 
-Expected: node `minikube` should be `Ready`.
+Expected: `minikube` node should be `Ready`.
 
-## 4. Start Jenkins
+## 4. Install and Start Jenkins on Windows
 
-Open Jenkins at:
+1. Install Jenkins LTS (MSI) from `https://www.jenkins.io/download/`.
+2. Start service and confirm:
 
-- `http://localhost:8080`
+```powershell
+Get-Service jenkins
+Start-Service jenkins
+```
 
-Install suggested plugins at first launch, then create admin user.
+3. Open `http://localhost:8080`.
+4. Unlock Jenkins using:
 
-Required plugins:
+```powershell
+Get-Content "C:\ProgramData\Jenkins\.jenkins\secrets\initialAdminPassword"
+```
+
+5. Install suggested plugins and create admin user.
+
+## 5. Jenkins Plugins
+
+Install:
 
 - Pipeline
 - Git
+- GitHub
 - GitHub Integration
+- Credentials
+- Credentials Binding
+- Pipeline: Stage View
 
-## 5. Configure Jenkins pipeline job
+## 6. Jenkins Global Tool Configuration
 
-1. Jenkins -> New Item -> `Pipeline` -> name it `CICDPractice`.
-2. Under Pipeline:
+Manage Jenkins -> Global Tool Configuration:
+
+- Git: path to `git.exe`
+- JDK: JDK 21
+- Maven: Maven 3.9+
+
+## 7. Jenkins Service Account (Important)
+
+If Jenkins cannot access Docker/Minikube, run Jenkins service as your Windows user:
+
+1. Open `services.msc`
+2. Jenkins -> Properties -> Log On
+3. Select `This account` and provide your Windows username/password
+4. Restart Jenkins service
+
+## 8. Create Jenkins Pipeline Job
+
+1. Jenkins Dashboard -> New Item
+2. Name: `cicd-practice`
+3. Type: `Pipeline`
+4. General:
+   - Check `Discard old builds` (recommended)
+   - Check `Do not allow concurrent builds` (recommended)
+5. Build Triggers:
+   - Check `GitHub hook trigger for GITScm polling`
+6. Pipeline:
    - Definition: `Pipeline script from SCM`
    - SCM: `Git`
-   - Repository URL: `https://github.com/deepaksahani877/cicd-practice.git`
+   - Repo URL: `https://github.com/deepaksahani877/cicd-practice.git`
    - Branch: `*/main`
    - Script Path: `Jenkinsfile`
-3. Save.
+7. Save
 
-## 6. Configure GitHub webhook
+## 9. Expose Local Jenkins with ngrok
+
+```powershell
+ngrok config add-authtoken <YOUR_NGROK_TOKEN>
+ngrok http 8080
+```
+
+Copy HTTPS forwarding URL, for example:
+- `https://xxxx-xx-xx-xx-xx.ngrok-free.app`
+
+Keep ngrok terminal running.
+
+## 10. Add GitHub Webhook
 
 In GitHub repo:
 
 1. Settings -> Webhooks -> Add webhook
-2. Payload URL: `http://<your-jenkins-host>:8080/github-webhook/`
-3. Content type: `application/json`
-4. Events: `Just the push event`
-5. Save
+2. Payload URL:
+   - `https://<your-ngrok-url>/github-webhook/`
+3. Content type:
+   - `application/json`
+4. Events:
+   - `Just the push event`
+5. Active:
+   - checked
+6. Save
 
-If Jenkins is on your local machine and GitHub cannot access it, use `ngrok` or deploy Jenkins on a reachable server/VM.
+Check delivery status in GitHub webhook panel. It should return HTTP `200`.
 
-## 7. Trigger pipeline
+## 11. Trigger and Validate Pipeline
 
-Option A: from Jenkins UI -> `Build Now`
+Push a commit:
 
-Option B: push commit to GitHub:
-
-```bash
+```powershell
 git add .
-git commit -m "trigger: test ci cd"
+git commit -m "test: webhook ci cd run"
 git push origin main
 ```
 
-## 8. Verify CI/CD results
+Expected Jenkins stages:
 
-Check Jenkins stages:
-
+- Preflight
 - Checkout
 - Build and Test
 - Build Docker Image (Minikube)
 - Deploy to Kubernetes
 
-Check Kubernetes:
+Validate deploy:
 
-```bash
+```powershell
 kubectl get deploy,pods,svc -n default
 kubectl rollout status deployment/cicdpractice -n default
 ```
 
-Access app:
+## 12. Access Application
 
-```bash
-minikube service cicdpractice-service --url
+Preferred on Windows:
+
+```powershell
+minikube service cicdpractice-service -n default --url
 ```
 
-If command hangs on Windows networking, use:
+This may return URL like `http://127.0.0.1:<random-port>`.
+Keep that terminal open while testing.
 
-```bash
-minikube ip
-```
-
-Then open:
+Direct NodePort (may fail on Windows networking):
 
 - `http://<minikube-ip>:30007`
 
-## 9. Important project files
+## 13. Common Failures and Fixes
 
-- `Jenkinsfile` - Pipeline definition
-- `Dockerfile` - App image build
-- `k8s/deployment.yaml` - Kubernetes deployment (`cicdpractice`)
-- `k8s/service.yaml` - NodePort service (`cicdpractice-service`)
+- `mvn: not found` or `kubectl: not found` in Jenkins log:
+  - Jenkins runtime missing tools.
+  - Install tools on Jenkins node, or run Jenkins on host instead of Docker container.
 
-## 10. Common issues
-
-- NodePort conflict (`30007 already allocated`):
-  - Delete old service using same NodePort:
+- `nodePort 30007 already allocated`:
+  - Delete conflicting old service:
   - `kubectl delete svc springboot-service -n default`
-- Jenkins cannot run Docker/Minikube:
-  - Ensure Jenkins agent user has permissions for Docker and local tools
-- Webhook not triggering:
-  - Verify webhook delivery logs in GitHub
-  - Verify Jenkins URL is publicly reachable
 
-## 11. Manual fallback deploy commands
+- Webhook triggers but no build:
+  - Verify job has `GitHub hook trigger for GITScm polling`.
+  - Check GitHub webhook delivery logs for status code and response.
 
-Use this when you want to test CD without Jenkins:
+- `minikube service --url` prints localhost URL:
+  - Normal with Docker driver on Windows.
+  - Keep tunnel terminal open.
 
-```bash
-mvn clean verify
-minikube -p minikube docker-env --shell powershell | Invoke-Expression
-docker build -t cicdpractice:manual -t cicdpractice:latest .
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-kubectl set image deployment/cicdpractice cicdpractice=cicdpractice:manual -n default
-kubectl rollout status deployment/cicdpractice -n default --timeout=180s
-```
+## 14. Important Files
+
+- `Jenkinsfile`
+- `Dockerfile`
+- `k8s/deployment.yaml`
+- `k8s/service.yaml`
