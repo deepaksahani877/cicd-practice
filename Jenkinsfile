@@ -68,9 +68,18 @@ pipeline {
                     } else {
                         powershell '''
                             $ErrorActionPreference = "Stop"
-                            docker build -t "$env:APP_NAME:$env:IMAGE_TAG" -t "$env:APP_NAME:latest" .
-                            minikube image load "$env:APP_NAME:$env:IMAGE_TAG"
-                            minikube image load "$env:APP_NAME:latest"
+                            $tagBuild = "$($env:APP_NAME):$($env:IMAGE_TAG)"
+                            $tagLatest = "$($env:APP_NAME):latest"
+                            docker build --tag $tagBuild --tag $tagLatest "$PWD"
+
+                            $profiles = minikube profile list -o json | ConvertFrom-Json
+                            $hasMinikubeProfile = $profiles.valid | Where-Object { $_.Name -eq "minikube" }
+                            if (-not $hasMinikubeProfile) {
+                                minikube start -p minikube --driver=docker
+                            }
+
+                            minikube image load $tagBuild
+                            minikube image load $tagLatest
                             docker images | Select-String $env:APP_NAME
                         '''
                     }
@@ -93,6 +102,13 @@ pipeline {
                     } else {
                         powershell '''
                             $ErrorActionPreference = "Stop"
+                            $profiles = minikube profile list -o json | ConvertFrom-Json
+                            $hasMinikubeProfile = $profiles.valid | Where-Object { $_.Name -eq "minikube" }
+                            if (-not $hasMinikubeProfile) {
+                                minikube start -p minikube --driver=docker
+                            }
+
+                            minikube update-context -p minikube
                             kubectl config use-context minikube
                             kubectl cluster-info
                             kubectl apply -n $env:K8S_NAMESPACE -f k8s/deployment.yaml
@@ -127,7 +143,7 @@ pipeline {
                 if (isUnix()) {
                     sh(returnStatus: true, script: 'kubectl get pods -n ${K8S_NAMESPACE} -o wide')
                 } else {
-                    powershell(returnStatus: true, script: 'kubectl get pods -n $env:K8S_NAMESPACE -o wide')
+                    powershell(returnStatus: true, script: '$ErrorActionPreference = "Continue"; kubectl get pods -n $env:K8S_NAMESPACE -o wide 2>$null')
                 }
             }
         }
