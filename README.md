@@ -1,71 +1,167 @@
 # CICDPractice
 
-CI/CD pipeline for a Spring Boot app using Git, GitHub, Jenkins, Docker, and Kubernetes (Minikube).
+Complete CI/CD setup for Spring Boot using Git, GitHub, Jenkins, Docker, and Kubernetes (Minikube).
 
-## What is configured
+## GitHub Repository
 
-- `Jenkinsfile`
-  - Checkout from GitHub (via SCM job config)
-  - Build and test with Maven (`mvn clean verify`)
-  - Build Docker image inside Minikube Docker daemon
-  - Deploy to Kubernetes with rolling update
-- `k8s/deployment.yaml`
-  - Deployment name: `cicdpractice`
-  - 2 replicas
-  - Readiness/Liveness probes on port `8080`
-- `k8s/service.yaml`
-  - NodePort service: `cicdpractice-service`
-  - Exposes app on NodePort `30007`
+- Repo URL: `https://github.com/deepaksahani877/cicd-practice.git`
 
-## Prerequisites
+## What this pipeline does
 
-- Git installed
-- GitHub repository containing this project
-- Jenkins installed and running
-- Docker installed
-- Minikube installed and running
-- `kubectl` configured for Minikube cluster
-- Jenkins agent with these tools in `PATH`: `docker`, `kubectl`, `minikube`, `java`, `mvn`
+1. Pull source from GitHub
+2. Build and test with Maven (`mvn clean verify`)
+3. Build Docker image in Minikube Docker daemon
+4. Deploy to Kubernetes using manifests in `k8s/`
+5. Roll out the latest image tag (`cicdpractice:<build-number>`)
 
-## Jenkins setup
+## 1. Clone project
 
-1. Create a **Pipeline** job in Jenkins.
-2. In job config:
-   - Pipeline definition: `Pipeline script from SCM`
-   - SCM: `Git`
-   - Repo URL: your GitHub repo URL
-   - Script Path: `Jenkinsfile`
-3. Add webhook in GitHub:
-   - URL: `http://<jenkins-host>:8080/github-webhook/`
-   - Content type: `application/json`
-   - Event: `Just the push event`
+```bash
+git clone https://github.com/deepaksahani877/cicd-practice.git
+cd cicd-practice
+```
 
-## First run (local Minikube)
+## 2. Install prerequisites
 
-Run once on the Jenkins host:
+Install these on the same machine where Jenkins agent runs:
+
+- Git
+- JDK 21
+- Maven 3.9+
+- Docker
+- Minikube
+- kubectl
+- Jenkins
+
+Verify:
+
+```bash
+git --version
+java -version
+mvn -version
+docker --version
+minikube version
+kubectl version --client
+```
+
+## 3. Start Docker and Minikube
 
 ```bash
 minikube start
 kubectl get nodes
 ```
 
-Then trigger Jenkins build. Pipeline will:
+Expected: node `minikube` should be `Ready`.
 
-1. Build and test app
-2. Build Docker image `cicdpractice:<build-number>`
-3. Apply manifests in `k8s/`
-4. Update deployment image and wait for rollout
+## 4. Start Jenkins
 
-## Verify deployment
+Open Jenkins at:
+
+- `http://localhost:8080`
+
+Install suggested plugins at first launch, then create admin user.
+
+Required plugins:
+
+- Pipeline
+- Git
+- GitHub Integration
+
+## 5. Configure Jenkins pipeline job
+
+1. Jenkins -> New Item -> `Pipeline` -> name it `CICDPractice`.
+2. Under Pipeline:
+   - Definition: `Pipeline script from SCM`
+   - SCM: `Git`
+   - Repository URL: `https://github.com/deepaksahani877/cicd-practice.git`
+   - Branch: `*/main`
+   - Script Path: `Jenkinsfile`
+3. Save.
+
+## 6. Configure GitHub webhook
+
+In GitHub repo:
+
+1. Settings -> Webhooks -> Add webhook
+2. Payload URL: `http://<your-jenkins-host>:8080/github-webhook/`
+3. Content type: `application/json`
+4. Events: `Just the push event`
+5. Save
+
+If Jenkins is on your local machine and GitHub cannot access it, use `ngrok` or deploy Jenkins on a reachable server/VM.
+
+## 7. Trigger pipeline
+
+Option A: from Jenkins UI -> `Build Now`
+
+Option B: push commit to GitHub:
 
 ```bash
-kubectl get deploy,pods,svc
+git add .
+git commit -m "trigger: test ci cd"
+git push origin main
+```
+
+## 8. Verify CI/CD results
+
+Check Jenkins stages:
+
+- Checkout
+- Build and Test
+- Build Docker Image (Minikube)
+- Deploy to Kubernetes
+
+Check Kubernetes:
+
+```bash
+kubectl get deploy,pods,svc -n default
+kubectl rollout status deployment/cicdpractice -n default
+```
+
+Access app:
+
+```bash
 minikube service cicdpractice-service --url
 ```
 
-Open the URL returned by the second command.
+If command hangs on Windows networking, use:
 
-## Notes
+```bash
+minikube ip
+```
 
-- `imagePullPolicy: Never` is intentional for local Minikube image usage.
-- If Jenkins runs in a separate environment from Minikube, use a remote container registry instead of local Minikube Docker daemon.
+Then open:
+
+- `http://<minikube-ip>:30007`
+
+## 9. Important project files
+
+- `Jenkinsfile` - Pipeline definition
+- `Dockerfile` - App image build
+- `k8s/deployment.yaml` - Kubernetes deployment (`cicdpractice`)
+- `k8s/service.yaml` - NodePort service (`cicdpractice-service`)
+
+## 10. Common issues
+
+- NodePort conflict (`30007 already allocated`):
+  - Delete old service using same NodePort:
+  - `kubectl delete svc springboot-service -n default`
+- Jenkins cannot run Docker/Minikube:
+  - Ensure Jenkins agent user has permissions for Docker and local tools
+- Webhook not triggering:
+  - Verify webhook delivery logs in GitHub
+  - Verify Jenkins URL is publicly reachable
+
+## 11. Manual fallback deploy commands
+
+Use this when you want to test CD without Jenkins:
+
+```bash
+mvn clean verify
+minikube -p minikube docker-env --shell powershell | Invoke-Expression
+docker build -t cicdpractice:manual -t cicdpractice:latest .
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+kubectl set image deployment/cicdpractice cicdpractice=cicdpractice:manual -n default
+kubectl rollout status deployment/cicdpractice -n default --timeout=180s
+```
