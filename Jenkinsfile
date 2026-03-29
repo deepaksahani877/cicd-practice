@@ -37,6 +37,29 @@ pipeline {
             }
         }
 
+        stage('Cluster Ready Check') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            set -e
+                            minikube status -p minikube
+                            kubectl config use-context minikube
+                            kubectl cluster-info
+                        '''
+                    } else {
+                        powershell '''
+                            $ErrorActionPreference = "Stop"
+                            minikube status -p minikube
+                            minikube update-context -p minikube
+                            kubectl config use-context minikube
+                            kubectl cluster-info
+                        '''
+                    }
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -70,16 +93,11 @@ pipeline {
                             $ErrorActionPreference = "Stop"
                             $tagBuild = "$($env:APP_NAME):$($env:IMAGE_TAG)"
                             $tagLatest = "$($env:APP_NAME):latest"
-                            docker build --tag $tagBuild --tag $tagLatest "$PWD"
-
-                            $profiles = minikube profile list -o json | ConvertFrom-Json
-                            $hasMinikubeProfile = $profiles.valid | Where-Object { $_.Name -eq "minikube" }
-                            if (-not $hasMinikubeProfile) {
-                                minikube start -p minikube --driver=docker
-                            }
-
-                            minikube image load $tagBuild
-                            minikube image load $tagLatest
+                            $qualifiedTagBuild = "docker.io/library/$tagBuild"
+                            $qualifiedTagLatest = "docker.io/library/$tagLatest"
+                            docker build --tag $tagBuild --tag $tagLatest --tag $qualifiedTagBuild --tag $qualifiedTagLatest "$PWD"
+                            minikube image load $qualifiedTagBuild
+                            minikube image load $qualifiedTagLatest
                             docker images | Select-String $env:APP_NAME
                         '''
                     }
@@ -102,18 +120,14 @@ pipeline {
                     } else {
                         powershell '''
                             $ErrorActionPreference = "Stop"
-                            $profiles = minikube profile list -o json | ConvertFrom-Json
-                            $hasMinikubeProfile = $profiles.valid | Where-Object { $_.Name -eq "minikube" }
-                            if (-not $hasMinikubeProfile) {
-                                minikube start -p minikube --driver=docker
-                            }
-
+                            $imageRef = "docker.io/library/$($env:APP_NAME):$($env:IMAGE_TAG)"
                             minikube update-context -p minikube
                             kubectl config use-context minikube
                             kubectl cluster-info
                             kubectl apply -n $env:K8S_NAMESPACE -f k8s/deployment.yaml
                             kubectl apply -n $env:K8S_NAMESPACE -f k8s/service.yaml
-                            kubectl set image deployment/$env:APP_NAME $env:APP_NAME=$env:APP_NAME:$env:IMAGE_TAG -n $env:K8S_NAMESPACE
+                            $patch = "{""spec"":{""template"":{""spec"":{""containers"":[{""name"":""$($env:APP_NAME)"",""image"":""$imageRef""}]}}}}"
+                            kubectl patch deployment $env:APP_NAME -n $env:K8S_NAMESPACE -p $patch
                             kubectl rollout status deployment/$env:APP_NAME -n $env:K8S_NAMESPACE --timeout=180s
                         '''
                     }

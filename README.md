@@ -216,7 +216,7 @@ Direct NodePort (may fail on Windows networking):
   - Normal with Docker driver on Windows.
   - Keep tunnel terminal open.
 
-## 14. Important Files
+## 14. Important Filesq
 
 - `Jenkinsfile`
 - `Dockerfile`
