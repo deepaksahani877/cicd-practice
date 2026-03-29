@@ -354,8 +354,8 @@ Answer:
 By switching to a safer deployment update method:
 
 - use a fully qualified image name
-- use a JSON patch
-- avoid ambiguous PowerShell string expansion
+- verify the deployment image immediately after update
+- avoid ambiguous shell expansion
 
 ### Q55. Why is `kubectl apply` used before patching the image?
 
@@ -438,6 +438,8 @@ I would check:
 4. whether rollout started a new ReplicaSet
 5. whether the patch command or Helm values were correct
 
+In this project, the practical lesson was that build success and even image build success did not guarantee the service was using the new code. The real check was the deployment image, pod image, and live in-cluster response.
+
 ### Q67. A deployment has two old pods running and one new pod pending forever. What does that usually mean?
 
 Answer:
@@ -511,6 +513,9 @@ Use rolling updates with appropriate readiness probes, sufficient replica count,
 
 Answer:
 Because quoting and variable interpolation across shells can break `set image` arguments. A patch can make the intended JSON payload explicit and reduce parsing ambiguity.
+
+Practical note:
+- whichever method you use, the key control is verifying the deployment image immediately after the update
 
 ### Q77. What is the purpose of immutable image tags?
 

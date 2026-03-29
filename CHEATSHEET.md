@@ -254,7 +254,7 @@ Because successful build only proves the artifact was created, not that Kubernet
 
 ### 2-minute answer
 
-In our case Maven build and Docker image build succeeded, but deployment failed because Kubernetes was given the wrong image reference and pods entered `ErrImageNeverPull`. Build success does not guarantee deployability. Deployment still depends on image naming, registry or runtime availability, manifests, and cluster health.
+In our case Maven build and Docker image build succeeded, but deployment or service behavior still failed because Kubernetes either received the wrong image reference or continued serving an older image. Build success does not guarantee deployability. Deployment still depends on image naming, runtime availability, manifest correctness, and rollout health.
 
 ### 5-minute direction
 
@@ -293,7 +293,7 @@ I verify the exact image in the pod spec and check whether that same image exist
 
 ### 2-minute answer
 
-I inspect the failed pod YAML, deployment, and cluster events to confirm the image name. Then I compare it with what exists in Minikube or the registry. In our project, the root cause was a broken PowerShell image update command that passed only `6`, `7`, or `8` instead of the full image reference.
+I inspect the failed pod YAML, deployment, and cluster events to confirm the image name. Then I compare it with what exists in Minikube or the registry. In our project, the root cause was a broken deploy image update and later a stale deployment still serving `latest`, so the right checks were deployment image, pod image, and live service response.
 
 ### 5-minute direction
 

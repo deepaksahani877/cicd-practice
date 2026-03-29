@@ -357,8 +357,7 @@ Use when:
 
 ```powershell
 $imageRef = "docker.io/library/cicdpractice:20260329225419"
-$patch = "{""spec"":{""template"":{""spec"":{""containers"":[{""name"":""cicdpractice"",""image"":""$imageRef""}]}}}}"
-kubectl patch deployment cicdpractice -n default -p $patch
+kubectl set image deployment/cicdpractice cicdpractice=$imageRef -n default
 ```
 
 Purpose:
@@ -367,6 +366,19 @@ Purpose:
 Use when:
 - every CI/CD run
 - manual rollout to a new image
+
+### Verify deployment image after update
+
+```powershell
+kubectl get deployment cicdpractice -n default -o jsonpath='{.spec.template.spec.containers[0].image}'
+```
+
+Purpose:
+- confirms Kubernetes accepted the exact image reference you intended to deploy
+
+Use when:
+- rollout appears stuck
+- build succeeded but application still serves old output
 
 ### Watch rollout
 
@@ -440,6 +452,19 @@ kubectl get events -n default --sort-by=.metadata.creationTimestamp
 
 Reason:
 - one new replica is failing readiness, image load, or startup
+
+### Build is successful but old response is still visible
+
+Check:
+
+```powershell
+kubectl get deployment cicdpractice -n default -o jsonpath='{.spec.template.spec.containers[0].image}'
+kubectl get pods -n default -l app=cicdpractice -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,IMAGE:.spec.containers[0].image
+kubectl run tmp-curl --rm -i --tty --restart=Never --image=curlimages/curl:8.10.1 -- curl -sS http://cicdpractice-service.default.svc.cluster.local:8080/
+```
+
+Reason:
+- Jenkins may have built the new image but Kubernetes is still serving an older ready ReplicaSet or an unchanged `latest` image
 
 ### Pod shows `ErrImageNeverPull`
 
@@ -750,6 +775,9 @@ Explanation:
 - `minikube image load`
   - copies local images into Minikube's container runtime
 
+- `minikube image ls`
+  - is better than only checking local Docker images because Kubernetes runs against Minikube's runtime, not just host Docker
+
 What is user-defined:
 
 - image name
@@ -779,14 +807,15 @@ Important commands:
 ```powershell
 kubectl apply -n $env:K8S_NAMESPACE -f k8s/deployment.yaml
 kubectl apply -n $env:K8S_NAMESPACE -f k8s/service.yaml
-$patch = "{""spec"":{""template"":{""spec"":{""containers"":[{""name"":""$($env:APP_NAME)"",""image"":""$imageRef""}]}}}}"
-kubectl patch deployment $env:APP_NAME -n $env:K8S_NAMESPACE -p $patch
+kubectl set image deployment/$env:APP_NAME $env:APP_NAME=$imageRef -n $env:K8S_NAMESPACE
+kubectl get deployment $env:APP_NAME -n $env:K8S_NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].image}'
 kubectl rollout status deployment/$env:APP_NAME -n $env:K8S_NAMESPACE --timeout=180s
 ```
 
-Why `patch` is used:
-- PowerShell string parsing caused broken image values with `kubectl set image`
-- JSON patch is more explicit
+Why `set image` plus verification is used:
+- it updates only the image field without rewriting the full manifest
+- verification immediately after update confirms Kubernetes actually accepted the expected image
+- this is important because a successful build does not guarantee the cluster is running the new code
 
 What is user-defined:
 

@@ -15,8 +15,9 @@ CI/CD setup for a Spring Boot app using Git, GitHub, Jenkins, Docker, and Kubern
 5. Jenkins builds Docker image tags for the current build.
 6. Jenkins loads the image into Minikube.
 7. Jenkins applies Kubernetes manifests.
-8. Jenkins patches the deployment to the new image.
-9. Jenkins waits for rollout completion.
+8. Jenkins updates the deployment to the new image tag.
+9. Jenkins verifies the deployment image really changed.
+10. Jenkins waits for rollout completion.
 
 ## Recommended environment
 
@@ -225,7 +226,7 @@ $qualifiedTagLatest = "docker.io/library/$tagLatest"
 docker build --tag $tagBuild --tag $tagLatest --tag $qualifiedTagBuild --tag $qualifiedTagLatest "$PWD"
 minikube image load $qualifiedTagBuild
 minikube image load $qualifiedTagLatest
-docker images | Select-String cicdpractice
+minikube image ls | Select-String cicdpractice
 ```
 
 ### Deploy to Kubernetes
@@ -237,8 +238,9 @@ kubectl config use-context minikube
 kubectl cluster-info
 kubectl apply -n default -f k8s\deployment.yaml
 kubectl apply -n default -f k8s\service.yaml
-$patch = "{""spec"":{""template"":{""spec"":{""containers"":[{""name"":""cicdpractice"",""image"":""$imageRef""}]}}}}"
-kubectl patch deployment cicdpractice -n default -p $patch
+kubectl set image deployment/cicdpractice cicdpractice=$imageRef -n default
+$deployedImage = kubectl get deployment cicdpractice -n default -o jsonpath='{.spec.template.spec.containers[0].image}'
+Write-Host "Deployment image: $deployedImage"
 kubectl rollout status deployment/cicdpractice -n default --timeout=180s
 ```
 
@@ -264,8 +266,7 @@ minikube image load "docker.io/library/cicdpractice:$tag"
 minikube image load "docker.io/library/cicdpractice:latest"
 kubectl apply -n default -f k8s\deployment.yaml
 kubectl apply -n default -f k8s\service.yaml
-$patch = "{""spec"":{""template"":{""spec"":{""containers"":[{""name"":""cicdpractice"",""image"":""docker.io/library/cicdpractice:$tag""}]}}}}"
-kubectl patch deployment cicdpractice -n default -p $patch
+kubectl set image deployment/cicdpractice cicdpractice="docker.io/library/cicdpractice:$tag" -n default
 kubectl rollout status deployment/cicdpractice -n default --timeout=180s
 kubectl get deploy,pods,svc -n default
 ```
@@ -314,6 +315,13 @@ Keep that terminal open.
   - check:
   - `git status --short`
   - `git log --oneline -n 5`
+
+- build succeeds but app still shows old output
+  - Kubernetes may still be serving an older image or older ready pods
+  - check:
+  - `kubectl get deployment cicdpractice -n default -o jsonpath='{.spec.template.spec.containers[0].image}'`
+  - `kubectl get pods -n default -l app=cicdpractice -o custom-columns=NAME:.metadata.name,IMAGE:.spec.containers[0].image,READY:.status.containerStatuses[0].ready`
+  - `kubectl run tmp-curl --rm -i --tty --restart=Never --image=curlimages/curl:8.10.1 -- curl -sS http://cicdpractice-service.default.svc.cluster.local:8080/`
 
 ## Files
 
