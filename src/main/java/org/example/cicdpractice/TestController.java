@@ -13,7 +13,7 @@ public class TestController {
     @GetMapping
     public Map<String, String> index() {
         Map<String,String> map = new HashMap<>();
-        map.put("message","Fuck ramdeen 2 bar");
+        map.put("message","CI/CD working fine 😊");
         map.put("status","ok");
         return  map;
     }
