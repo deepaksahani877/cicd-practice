@@ -1,15 +1,21 @@
 apiVersion: v1
 kind: Service
 metadata:
+  # Stable in-cluster service name used for access and testing.
   name: cicdpractice-service
 
 spec:
+  # NodePort is used here because this project targets local Minikube access.
   type: NodePort
 
   selector:
+    # Must match the pod label defined in deployment.yaml.
     app: cicdpractice
 
   ports:
+    # Cluster-internal service port.
     - port: 8080
+      # Forward traffic to the application port inside the container.
       targetPort: 8080
+      # Fixed local port for Minikube access; change it if another service already uses 30007.
       nodePort: 30007

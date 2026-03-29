@@ -1,33 +1,41 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  # Deployment name is reused by Jenkins during rollout and image update commands.
   name: cicdpractice
   labels:
     app: cicdpractice
 spec:
+  # Keep at least two pods so rolling updates can replace them without full downtime.
   replicas: 2
 
   selector:
     matchLabels:
+      # This selector must match the pod template label below.
       app: cicdpractice
 
   template:
     metadata:
       labels:
+        # Service and Deployment both use this label to target the correct pods.
         app: cicdpractice
 
     spec:
       containers:
         - name: cicdpractice
+          # Jenkins updates this image value during deployment to the current build tag.
           image: cicdpractice:latest
+          # Local Minikube workflow expects the image to already be loaded into the node runtime.
           imagePullPolicy: Never
           ports:
             - containerPort: 8080
+          # Readiness blocks traffic until the application is accepting connections.
           readinessProbe:
             tcpSocket:
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 5
+          # Liveness helps Kubernetes restart the container if it becomes unhealthy later.
           livenessProbe:
             tcpSocket:
               port: 8080
