@@ -135,23 +135,12 @@ pipeline {
                             kubectl cluster-info
                             kubectl apply -n $env:K8S_NAMESPACE -f k8s/deployment.yaml
                             kubectl apply -n $env:K8S_NAMESPACE -f k8s/service.yaml
-                            $patchObject = @{
-                                spec = @{
-                                    template = @{
-                                        spec = @{
-                                            containers = @(
-                                                @{
-                                                    name = $env:APP_NAME
-                                                    image = $imageRef
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
+                            kubectl set image "deployment/$($env:APP_NAME)" "$($env:APP_NAME)=$imageRef" -n $env:K8S_NAMESPACE
+                            $deployedImage = kubectl get deployment $env:APP_NAME -n $env:K8S_NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].image}'
+                            Write-Host "Deployment image: $deployedImage"
+                            if ($deployedImage -ne $imageRef) {
+                                throw "Deployment image mismatch. Expected $imageRef but found $deployedImage"
                             }
-                            $patchJson = $patchObject | ConvertTo-Json -Depth 10 -Compress
-                            kubectl patch deployment $env:APP_NAME -n $env:K8S_NAMESPACE --type strategic -p $patchJson
-                            kubectl get deployment $env:APP_NAME -n $env:K8S_NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].image}'
                             Write-Host ""
                             kubectl rollout status deployment/$env:APP_NAME -n $env:K8S_NAMESPACE --timeout=180s
                         '''
