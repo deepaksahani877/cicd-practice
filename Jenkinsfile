@@ -83,10 +83,15 @@ pipeline {
                 script {
                     if (isUnix()) {
                         sh '''
-                            docker build -t ${APP_NAME}:${IMAGE_TAG} -t ${APP_NAME}:latest .
-                            minikube image load ${APP_NAME}:${IMAGE_TAG}
-                            minikube image load ${APP_NAME}:latest
-                            docker images | grep ${APP_NAME} || true
+                            set -e
+                            TAG_BUILD="${APP_NAME}:${IMAGE_TAG}"
+                            TAG_LATEST="${APP_NAME}:latest"
+                            QUALIFIED_TAG_BUILD="docker.io/library/${TAG_BUILD}"
+                            QUALIFIED_TAG_LATEST="docker.io/library/${TAG_LATEST}"
+                            docker build -t "${TAG_BUILD}" -t "${TAG_LATEST}" -t "${QUALIFIED_TAG_BUILD}" -t "${QUALIFIED_TAG_LATEST}" .
+                            minikube image load "${QUALIFIED_TAG_BUILD}"
+                            minikube image load "${QUALIFIED_TAG_LATEST}"
+                            minikube image ls | grep "${APP_NAME}" || true
                         '''
                     } else {
                         powershell '''
@@ -98,7 +103,7 @@ pipeline {
                             docker build --tag $tagBuild --tag $tagLatest --tag $qualifiedTagBuild --tag $qualifiedTagLatest "$PWD"
                             minikube image load $qualifiedTagBuild
                             minikube image load $qualifiedTagLatest
-                            docker images | Select-String $env:APP_NAME
+                            minikube image ls | Select-String $env:APP_NAME
                         '''
                     }
                 }
@@ -110,11 +115,15 @@ pipeline {
                 script {
                     if (isUnix()) {
                         sh '''
+                            set -e
+                            IMAGE_REF="docker.io/library/${APP_NAME}:${IMAGE_TAG}"
                             kubectl config use-context minikube
                             kubectl cluster-info
                             kubectl apply -n ${K8S_NAMESPACE} -f k8s/deployment.yaml
                             kubectl apply -n ${K8S_NAMESPACE} -f k8s/service.yaml
-                            kubectl set image deployment/${APP_NAME} ${APP_NAME}=${APP_NAME}:${IMAGE_TAG} -n ${K8S_NAMESPACE}
+                            kubectl patch deployment "${APP_NAME}" -n "${K8S_NAMESPACE}" --type strategic -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"${APP_NAME}\",\"image\":\"${IMAGE_REF}\"}]}}}}"
+                            kubectl get deployment "${APP_NAME}" -n "${K8S_NAMESPACE}" -o jsonpath='{.spec.template.spec.containers[0].image}'
+                            echo
                             kubectl rollout status deployment/${APP_NAME} -n ${K8S_NAMESPACE} --timeout=180s
                         '''
                     } else {
@@ -126,8 +135,24 @@ pipeline {
                             kubectl cluster-info
                             kubectl apply -n $env:K8S_NAMESPACE -f k8s/deployment.yaml
                             kubectl apply -n $env:K8S_NAMESPACE -f k8s/service.yaml
-                            $patch = "{""spec"":{""template"":{""spec"":{""containers"":[{""name"":""$($env:APP_NAME)"",""image"":""$imageRef""}]}}}}"
-                            kubectl patch deployment $env:APP_NAME -n $env:K8S_NAMESPACE -p $patch
+                            $patchObject = @{
+                                spec = @{
+                                    template = @{
+                                        spec = @{
+                                            containers = @(
+                                                @{
+                                                    name = $env:APP_NAME
+                                                    image = $imageRef
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            $patchJson = $patchObject | ConvertTo-Json -Depth 10 -Compress
+                            kubectl patch deployment $env:APP_NAME -n $env:K8S_NAMESPACE --type strategic -p $patchJson
+                            kubectl get deployment $env:APP_NAME -n $env:K8S_NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].image}'
+                            Write-Host ""
                             kubectl rollout status deployment/$env:APP_NAME -n $env:K8S_NAMESPACE --timeout=180s
                         '''
                     }
